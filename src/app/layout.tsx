@@ -27,7 +27,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      appearance={{
+        variables: {
+          colorPrimary: "#43ffaf",
+          colorBackground: "#526777",
+          colorTextOnPrimaryBackground: "#FFFFFF",
+          colorText: "#FFFFFF",
+        },
+        layout: {
+          showOptionalFields: false,
+        },
+      }}
+    >
       <html lang="en" className={`${GeistSans.variable}`}>
         <body
           className={cn(
