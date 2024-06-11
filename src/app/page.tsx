@@ -1,65 +1,284 @@
-import Link from "next/link";
+"use client";
 
-import { CreatePost } from "@/app/_components/create-post";
-import { api } from "@/trpc/server";
+import Footer from "@/components/footer";
+import { useClerk, useUser } from "@clerk/nextjs";
+import Head from "next/head";
+import { useEffect, useState } from "react";
 
-export default async function Home() {
-  const hello = await api.post.hello({ text: "from tRPC" });
+import { LoadingCard } from "@/components/loadingCard";
+import { ScoreboardCard } from "@/components/scoreboardCard";
+import { SubmitScoreCard } from "@/components/submitScoreCard";
+import { WorseTimeCard } from "@/components/worseTimeCard";
+import { api } from "@/trpc/react";
 
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#2e026d] to-[#15162c] text-white">
-      <div className="container flex flex-col items-center justify-center gap-12 px-4 py-16 ">
-        <h1 className="text-5xl font-extrabold tracking-tight sm:text-[5rem]">
-          Create <span className="text-[hsl(280,100%,70%)]">T3</span> App
-        </h1>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-8">
-          <Link
-            className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 hover:bg-white/20"
-            href="https://create.t3.gg/en/usage/first-steps"
-            target="_blank"
-          >
-            <h3 className="text-2xl font-bold">First Steps →</h3>
-            <div className="text-lg">
-              Just the basics - Everything you need to know to set up your
-              database and authentication.
-            </div>
-          </Link>
-          <Link
-            className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 hover:bg-white/20"
-            href="https://create.t3.gg/en/introduction"
-            target="_blank"
-          >
-            <h3 className="text-2xl font-bold">Documentation →</h3>
-            <div className="text-lg">
-              Learn more about Create T3 App, the libraries it uses, and how to
-              deploy it.
-            </div>
-          </Link>
-        </div>
-        <div className="flex flex-col items-center gap-2">
-          <p className="text-2xl text-white">
-            {hello ? hello.greeting : "Loading tRPC query..."}
-          </p>
-        </div>
+function useKeyDown<T extends (e: KeyboardEvent) => void>(
+  handler: T,
+  keys: string[],
+) {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (!e.key) return;
 
-        <CrudShowcase />
-      </div>
-    </main>
-  );
+    const wasAnyKeyPressed =
+      keys.includes(e.key.toUpperCase()) || e.key === "Backspace";
+    if (wasAnyKeyPressed) {
+      handler(e);
+    }
+  };
+
+  useEffect(() => {
+    document.addEventListener(`keydown`, onKeyDown);
+    return () => {
+      document.removeEventListener(`keydown`, onKeyDown);
+    };
+  }, [onKeyDown]);
 }
 
-async function CrudShowcase() {
-  const latestPost = await api.post.getLatest();
+export default function Home() {
+  const letterMap = {
+    "": 0,
+    A: 1,
+    B: 2,
+    C: 3,
+    D: 4,
+    E: 5,
+    F: 6,
+    G: 7,
+    H: 8,
+    I: 9,
+    J: 10,
+    K: 11,
+    L: 12,
+    M: 13,
+    N: 14,
+    O: 15,
+    P: 16,
+    Q: 17,
+    R: 18,
+    S: 19,
+    T: 20,
+    U: 21,
+    V: 22,
+    W: 23,
+    X: 24,
+    Y: 25,
+    Z: 26,
+  } as const;
+
+  const { isSignedIn, user } = useUser();
+  const { openSignUp } = useClerk();
+
+  const [currentLetter, setCurrentLetter] = useState("");
+  const [typoStack, setTypoStack] = useState<string[]>([]);
+  const [startTime, setStartTime] = useState<number>();
+  const [totalTime, setTotalTime] = useState<number>(0);
+  const [mistakes, setMistakes] = useState<number>(0);
+  const [nickname, setNickname] = useState<string>("");
+  const [timeBetweenLetters, setTimeBetweenLetters] = useState<number[]>([]);
+
+  const { data: previousScore } = api.leaderboard.getScoreByUserId.useQuery(
+    {
+      userId: user?.id ?? "",
+    },
+    { refetchOnWindowFocus: false },
+  );
+  const { data: scoreboard, isLoading: scoreboardIsLoading } =
+    api.leaderboard.getScoreboard.useQuery(
+      {
+        time: getLowestTime()!,
+      },
+      { enabled: currentLetter === "Z", refetchOnWindowFocus: false },
+    );
+
+  function reset() {
+    setCurrentLetter("");
+    setTypoStack([]);
+    setStartTime(undefined);
+    setTotalTime(0);
+    setMistakes(0);
+    setTimeBetweenLetters([]);
+  }
+
+  function getLowestTime() {
+    return totalTime / 1000 < (previousScore?.time ?? 100)
+      ? totalTime / 1000
+      : previousScore?.time;
+  }
+
+  useKeyDown((e) => {
+    if (
+      letterMap[e.key.toUpperCase() as keyof typeof letterMap] ===
+        letterMap[currentLetter as keyof typeof letterMap] + 1 &&
+      typoStack.length === 0
+    ) {
+      setCurrentLetter(e.key.toUpperCase());
+      if (e.key.toUpperCase() === "A") {
+        setStartTime(Date.now());
+      }
+      if (e.key.toUpperCase() === "Z") {
+        setTotalTime(Date.now() - startTime!);
+      }
+      if (currentLetter !== "A" && startTime) {
+        setTimeBetweenLetters([
+          ...timeBetweenLetters,
+          Date.now() -
+            (startTime + timeBetweenLetters.reduce((a, b) => a + b, 0)),
+        ]);
+      }
+    } else if (e.key === "Backspace") {
+      setTypoStack(typoStack.slice(0, -1));
+    } else if (currentLetter !== "Z") {
+      setTypoStack([...typoStack, e.key.toUpperCase()]);
+      setMistakes(mistakes + 1);
+    }
+  }, Object.keys(letterMap));
+
+  const cssForLetters = `
+    div.letterContainer span:nth-child(-n+${
+      letterMap[currentLetter as keyof typeof letterMap]
+    }) {
+      color: #e5f7ef
+    }
+
+    div.letterContainer span:nth-child(n+${
+      letterMap[currentLetter as keyof typeof letterMap] + 1
+    }):nth-child(-n+${
+      letterMap[currentLetter as keyof typeof letterMap] + typoStack.length
+    }) {
+      color: #ff5f5f;
+    }
+    }
+  `;
 
   return (
-    <div className="w-full max-w-xs">
-      {latestPost ? (
-        <p className="truncate">Your most recent post: {latestPost.name}</p>
-      ) : (
-        <p>You have no posts yet.</p>
-      )}
+    <>
+      <Head>
+        <title>Welcome to AZType</title>
+        <meta name="description" content="Type A-Z as fast as you can!" />
+        <link rel="icon" href="/favicon.ico" />
+      </Head>
+      <main className="flex h-screen w-full flex-col">
+        <div className="bg-primary text-subprimary flex h-full flex-1 flex-col items-center justify-center gap-3 overflow-auto font-sans">
+          {!currentLetter && <h1 className="animate-pulse">start typing...</h1>}
+          {currentLetter && (
+            <h1>{letterMap[currentLetter as keyof typeof letterMap]}/26</h1>
+          )}
+          <style>{cssForLetters}</style>
+          <div
+            className={`${
+              currentLetter === "Z" ? "text-green-300" : "letterContainer"
+            } flex gap-0.5 text-2xl`}
+          >
+            <span>A</span>
+            <span>B</span>
+            <span>C</span>
+            <span>D</span>
+            <span>E</span>
+            <span>F</span>
+            <span>G</span>
+            <span>H</span>
+            <span>I</span>
+            <span>J</span>
+            <span>K</span>
+            <span>L</span>
+            <span>M</span>
+            <span>N</span>
+            <span>O</span>
+            <span>P</span>
+            <span>Q</span>
+            <span>R</span>
+            <span>S</span>
+            <span>T</span>
+            <span>U</span>
+            <span>V</span>
+            <span>W</span>
+            <span>X</span>
+            <span>Y</span>
+            <span>Z</span>
+          </div>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className={`h-6 w-6 ${
+              currentLetter === "Z" && "animate-pulse"
+            } hover:stroke-white`}
+            onClick={() => {
+              reset();
+            }}
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            stroke-width="2"
+            stroke="currentColor"
+            fill="none"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+            <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"></path>
+            <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"></path>
+          </svg>
+          {!!totalTime && <h2>Time: {totalTime / 1000} seconds</h2>}
+          {!!previousScore?.time && isSignedIn && (
+            <h2 className="pb-3">Previous time: {previousScore?.time}</h2>
+          )}
+          {currentLetter === "Z" && timeBetweenLetters.length > 0 && (
+            <h2>
+              Average time between letters:{" "}
+              {(
+                timeBetweenLetters.reduce((a, b) => a + b) /
+                timeBetweenLetters.length /
+                1000
+              ).toFixed(3)}
+              &nbsp;seconds
+            </h2>
+          )}
+          {currentLetter === "Z" && timeBetweenLetters.length > 0 && (
+            <h2>
+              Shortest time between letters:{" "}
+              {(Math.min(...timeBetweenLetters) / 1000).toFixed(3)}
+              &nbsp;seconds
+            </h2>
+          )}
 
-      <CreatePost />
-    </div>
+          {currentLetter === "Z" && <h2>Mistakes: {mistakes}</h2>}
+          {!isSignedIn && <button onClick={() => openSignUp()}>Sign up</button>}
+          <div className="flex gap-6 ">
+            {/* eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing */}
+            {(previousScore?.time && totalTime / 1000 < previousScore?.time) ||
+            !previousScore ? (
+              <>
+                {currentLetter === "Z" && isSignedIn && (
+                  <SubmitScoreCard
+                    previousTime={previousScore?.time}
+                    currentTime={totalTime / 1000}
+                    nickname={nickname}
+                    setNickname={setNickname}
+                    userId={user?.id ?? ""}
+                    reset={reset}
+                  />
+                )}
+              </>
+            ) : (
+              <WorseTimeCard
+                previousTime={previousScore?.time}
+                currentTime={totalTime / 1000}
+                reset={reset}
+              />
+            )}
+            {scoreboardIsLoading && <LoadingCard />}
+            {scoreboard && (
+              <ScoreboardCard
+                userId={user?.id ?? ""}
+                fasterTimes={scoreboard?.fasterTimes}
+                slowerTimes={scoreboard?.slowerTimes}
+                currentTime={getLowestTime()!}
+                rank={scoreboard?.rank + 1}
+              />
+            )}
+          </div>
+        </div>
+        <Footer />
+      </main>
+    </>
   );
 }
